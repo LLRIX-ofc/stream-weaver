@@ -1,0 +1,192 @@
+import React, { useEffect, useState } from 'react';
+import { Media } from '@/types/media';
+import { getTrending, getPopular, getNowPlaying, getUpcoming, getAiringToday, getImageUrl } from '@/services/tmdb';
+import { MediaRow } from '@/components/MediaRow';
+import { Play, Info, Plus, Check } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useApp } from '@/contexts/AppContext';
+
+interface HomePageProps {
+  onMediaClick: (media: Media) => void;
+}
+
+export const HomePage: React.FC<HomePageProps> = ({ onMediaClick }) => {
+  const [trending, setTrending] = useState<Media[]>([]);
+  const [popular, setPopular] = useState<Media[]>([]);
+  const [newReleases, setNewReleases] = useState<Media[]>([]);
+  const [seasonal, setSeasonal] = useState<Media[]>([]);
+  const [upcoming, setUpcoming] = useState<Media[]>([]);
+  const [heroItem, setHeroItem] = useState<Media | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const { isInWishlist, addToWishlist, removeFromWishlist } = useApp();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const [trendingData, popularData, newData, seasonalData, upcomingData] = await Promise.all([
+          getTrending('all', 'week'),
+          getPopular('movie'),
+          getNowPlaying('movie'),
+          getAiringToday(),
+          getUpcoming(),
+        ]);
+
+        setTrending(trendingData);
+        setPopular(popularData);
+        setNewReleases(newData);
+        setSeasonal(seasonalData);
+        setUpcoming(upcomingData);
+
+        // Set hero item from trending
+        if (trendingData.length > 0) {
+          const heroCandidate = trendingData.find(m => m.backdrop_path) || trendingData[0];
+          setHeroItem(heroCandidate);
+        }
+      } catch (error) {
+        console.error('Failed to fetch home data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const heroTitle = heroItem?.title || heroItem?.name || '';
+  const heroMediaType = heroItem?.media_type || 'movie';
+  const heroInWishlist = heroItem ? isInWishlist(heroItem.id, heroMediaType) : false;
+
+  const handleHeroWishlist = () => {
+    if (!heroItem) return;
+    if (heroInWishlist) {
+      removeFromWishlist(heroItem.id, heroMediaType);
+    } else {
+      addToWishlist({
+        mediaId: heroItem.id,
+        mediaType: heroMediaType,
+        addedAt: new Date().toISOString(),
+        title: heroTitle,
+        posterPath: heroItem.poster_path,
+        releaseDate: heroItem.release_date || heroItem.first_air_date,
+        voteAverage: heroItem.vote_average,
+      });
+    }
+  };
+
+  return (
+    <div className="min-h-screen pb-24 md:pb-8">
+      {/* Hero Section */}
+      {heroItem && (
+        <section className="relative h-[70vh] md:h-[85vh] overflow-hidden">
+          {/* Background Image */}
+          <div className="absolute inset-0">
+            {heroItem.backdrop_path ? (
+              <img
+                src={getImageUrl(heroItem.backdrop_path, 'original')!}
+                alt={heroTitle}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-muted" />
+            )}
+            <div className="absolute inset-0 hero-gradient" />
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+            <div className="absolute inset-x-0 top-0 h-24 hero-gradient-top" />
+          </div>
+
+          {/* Hero Content */}
+          <div className="absolute bottom-0 left-0 right-0 p-6 md:p-12 md:pb-24">
+            <div className="max-w-2xl animate-slide-up">
+              <h1 className="text-4xl md:text-6xl font-bold text-foreground mb-3 text-shadow-lg">
+                {heroTitle}
+              </h1>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="px-2 py-0.5 bg-primary text-primary-foreground text-xs font-semibold rounded">
+                  {heroMediaType === 'tv' ? 'TV SERIES' : 'MOVIE'}
+                </span>
+                <span className="text-muted-foreground">
+                  {(heroItem.release_date || heroItem.first_air_date || '').split('-')[0]}
+                </span>
+                <span className="text-muted-foreground">•</span>
+                <span className="text-success font-medium">
+                  ★ {heroItem.vote_average.toFixed(1)}
+                </span>
+              </div>
+              <p className="text-base md:text-lg text-foreground/90 mb-6 line-clamp-3 text-shadow">
+                {heroItem.overview}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  size="lg"
+                  onClick={() => onMediaClick(heroItem)}
+                  className="gap-2"
+                >
+                  <Info className="w-5 h-5" />
+                  More Info
+                </Button>
+                <Button
+                  size="lg"
+                  variant={heroInWishlist ? 'secondary' : 'outline'}
+                  onClick={handleHeroWishlist}
+                  className="gap-2"
+                >
+                  {heroInWishlist ? (
+                    <>
+                      <Check className="w-5 h-5" />
+                      In Wishlist
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-5 h-5" />
+                      My List
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Content Rows */}
+      <div className="relative z-10 -mt-16 md:-mt-24 space-y-2">
+        <MediaRow
+          title="🔥 Trending This Week"
+          items={trending}
+          onItemClick={onMediaClick}
+          isLoading={isLoading}
+        />
+
+        <MediaRow
+          title="Popular Movies"
+          items={popular}
+          onItemClick={onMediaClick}
+          isLoading={isLoading}
+        />
+
+        <MediaRow
+          title="New Releases"
+          items={newReleases}
+          onItemClick={onMediaClick}
+          isLoading={isLoading}
+        />
+
+        <MediaRow
+          title="📺 Airing This Season"
+          items={seasonal}
+          onItemClick={onMediaClick}
+          isLoading={isLoading}
+        />
+
+        <MediaRow
+          title="Coming Soon"
+          items={upcoming}
+          onItemClick={onMediaClick}
+          isLoading={isLoading}
+        />
+      </div>
+    </div>
+  );
+};

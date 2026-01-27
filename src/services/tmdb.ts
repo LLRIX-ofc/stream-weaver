@@ -1,4 +1,4 @@
-import { Media, MediaDetails, SearchFilters } from '@/types/media';
+import { Media, MediaDetails, SearchFilters, Genre, AgeRating } from '@/types/media';
 
 const TMDB_API_KEY = '2dca580c2a14b55200e784d157207b4d';
 const BASE_URL = 'https://api.themoviedb.org/3';
@@ -113,6 +113,13 @@ export const searchMedia = async (
       return true;
     });
 
+    // Apply genre filter
+    if (filters.genres.length > 0) {
+      results = results.filter(item => 
+        item.genre_ids?.some(gid => filters.genres.includes(gid))
+      );
+    }
+
     return {
       results: results.map(item => ({
         ...item,
@@ -144,6 +151,17 @@ export const searchMedia = async (
       params[dateField] = `${filters.maxYear}-12-31`;
     }
 
+    // Genre filter
+    if (filters.genres.length > 0) {
+      params['with_genres'] = filters.genres.join(',');
+    }
+
+    // Age rating / certification filter (US certifications)
+    if (filters.ageRatings.length > 0) {
+      params['certification_country'] = 'US';
+      params['certification'] = filters.ageRatings.join('|');
+    }
+
     const data = await fetchTMDB<TMDBResponse<Media>>(`/discover/${mediaType}`, params);
     
     return {
@@ -155,7 +173,19 @@ export const searchMedia = async (
 };
 
 // Get Genres
-export const getGenres = async (mediaType: 'movie' | 'tv' = 'movie') => {
-  const data = await fetchTMDB<{ genres: { id: number; name: string }[] }>(`/genre/${mediaType}/list`);
+export const getGenres = async (mediaType: 'movie' | 'tv' = 'movie'): Promise<Genre[]> => {
+  const data = await fetchTMDB<{ genres: Genre[] }>(`/genre/${mediaType}/list`);
   return data.genres;
+};
+
+// Get all genres (movie + tv combined, deduplicated)
+export const getAllGenres = async (): Promise<Genre[]> => {
+  const [movieGenres, tvGenres] = await Promise.all([
+    getGenres('movie'),
+    getGenres('tv'),
+  ]);
+  
+  const genreMap = new Map<number, Genre>();
+  [...movieGenres, ...tvGenres].forEach(g => genreMap.set(g.id, g));
+  return Array.from(genreMap.values()).sort((a, b) => a.name.localeCompare(b.name));
 };

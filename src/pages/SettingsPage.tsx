@@ -1,14 +1,35 @@
-import React from 'react';
-import { Settings, Palette, FolderOpen, Play, Monitor, Moon, Sun, Info, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Settings, FolderOpen, Play, Monitor, Info, Trash2, Link2, Check, ExternalLink, Loader2 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { traktService, TraktWatchlistItem } from '@/services/trakt';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 export const SettingsPage: React.FC = () => {
   const { settings, updateSettings, library, wishlist } = useApp();
+  
+  // Trakt state
+  const [traktClientId, setTraktClientId] = useState('');
+  const [traktClientSecret, setTraktClientSecret] = useState('');
+  const [traktConfigured, setTraktConfigured] = useState(false);
+  const [traktAuthenticated, setTraktAuthenticated] = useState(false);
+  const [traktLoading, setTraktLoading] = useState(false);
+  const [traktError, setTraktError] = useState('');
+
+  // Load Trakt config on mount
+  useEffect(() => {
+    const config = traktService.getConfig();
+    if (config) {
+      setTraktClientId(config.clientId || '');
+      setTraktClientSecret(config.clientSecret || '');
+      setTraktConfigured(traktService.isConfigured());
+      setTraktAuthenticated(traktService.isAuthenticated());
+    }
+  }, []);
 
   const handleClearLibrary = () => {
     if (confirm(`Are you sure you want to clear all ${library.length} items from your library? This cannot be undone.`)) {
@@ -29,7 +50,65 @@ export const SettingsPage: React.FC = () => {
       localStorage.removeItem('movieapp_library');
       localStorage.removeItem('movieapp_wishlist');
       localStorage.removeItem('movieapp_settings');
+      localStorage.removeItem('movieapp_trakt');
       window.location.reload();
+    }
+  };
+
+  const handleSaveTraktCredentials = () => {
+    if (!traktClientId.trim() || !traktClientSecret.trim()) {
+      setTraktError('Please enter both Client ID and Client Secret');
+      return;
+    }
+    
+    traktService.setCredentials(traktClientId.trim(), traktClientSecret.trim());
+    setTraktConfigured(true);
+    setTraktError('');
+  };
+
+  const handleTraktAuth = () => {
+    const redirectUri = window.location.origin + '/trakt-callback';
+    const authUrl = traktService.getAuthUrl(redirectUri);
+    
+    // Open auth in popup or new tab
+    const authWindow = window.open(authUrl, 'trakt-auth', 'width=600,height=700');
+    
+    // Listen for the callback
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'trakt-callback' && event.data?.code) {
+        setTraktLoading(true);
+        const success = await traktService.exchangeCode(event.data.code, redirectUri);
+        setTraktLoading(false);
+        
+        if (success) {
+          setTraktAuthenticated(true);
+          setTraktError('');
+        } else {
+          setTraktError('Failed to authenticate with Trakt');
+        }
+        
+        window.removeEventListener('message', handleMessage);
+        authWindow?.close();
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+  };
+
+  const handleTraktDisconnect = () => {
+    if (confirm('Are you sure you want to disconnect from Trakt?')) {
+      traktService.disconnect();
+      setTraktAuthenticated(false);
+    }
+  };
+
+  const handleClearTraktConfig = () => {
+    if (confirm('Are you sure you want to clear Trakt configuration?')) {
+      traktService.clearConfig();
+      setTraktClientId('');
+      setTraktClientSecret('');
+      setTraktConfigured(false);
+      setTraktAuthenticated(false);
     }
   };
 
@@ -48,6 +127,96 @@ export const SettingsPage: React.FC = () => {
 
       {/* Settings Sections */}
       <div className="max-w-3xl mx-auto space-y-6">
+        {/* Trakt Integration */}
+        <section className="p-6 rounded-lg bg-card border border-border">
+          <div className="flex items-center gap-2 mb-4">
+            <Link2 className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Trakt.tv Integration</h2>
+            {traktAuthenticated && (
+              <span className="ml-auto px-2 py-0.5 rounded-full bg-primary/20 text-primary text-xs font-medium flex items-center gap-1">
+                <Check className="w-3 h-3" />
+                Connected
+              </span>
+            )}
+          </div>
+
+          <p className="text-sm text-muted-foreground mb-4">
+            Connect to Trakt.tv to sync your watchlist and watch history across devices.
+            <a 
+              href="https://trakt.tv/oauth/applications/new" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-primary hover:underline ml-1 inline-flex items-center gap-1"
+            >
+              Create a Trakt app <ExternalLink className="w-3 h-3" />
+            </a>
+          </p>
+
+          {traktError && (
+            <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+              {traktError}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-foreground mb-2 block">Client ID</Label>
+              <Input
+                value={traktClientId}
+                onChange={(e) => setTraktClientId(e.target.value)}
+                placeholder="Enter your Trakt Client ID"
+                className="bg-secondary border-border font-mono text-sm"
+                disabled={traktAuthenticated}
+              />
+            </div>
+
+            <div>
+              <Label className="text-foreground mb-2 block">Client Secret</Label>
+              <Input
+                type="password"
+                value={traktClientSecret}
+                onChange={(e) => setTraktClientSecret(e.target.value)}
+                placeholder="Enter your Trakt Client Secret"
+                className="bg-secondary border-border font-mono text-sm"
+                disabled={traktAuthenticated}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-2">
+              {!traktConfigured ? (
+                <Button onClick={handleSaveTraktCredentials}>
+                  Save Credentials
+                </Button>
+              ) : !traktAuthenticated ? (
+                <>
+                  <Button onClick={handleTraktAuth} disabled={traktLoading}>
+                    {traktLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Connecting...
+                      </>
+                    ) : (
+                      'Connect to Trakt'
+                    )}
+                  </Button>
+                  <Button variant="outline" onClick={handleClearTraktConfig}>
+                    Clear Config
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={handleTraktDisconnect}>
+                    Disconnect
+                  </Button>
+                  <Button variant="ghost" onClick={handleClearTraktConfig}>
+                    Clear Config
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
         {/* Playback Settings */}
         <section className="p-6 rounded-lg bg-card border border-border">
           <div className="flex items-center gap-2 mb-4">
@@ -202,7 +371,7 @@ export const SettingsPage: React.FC = () => {
           </p>
 
           <div className="p-3 rounded-lg bg-card text-sm font-mono text-muted-foreground overflow-x-auto">
-            npm run electron
+            cd electron && npm install && npm start
           </div>
         </section>
       </div>

@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Search, SlidersHorizontal, X, Star, Calendar } from 'lucide-react';
-import { Media, SearchFilters, MediaType } from '@/types/media';
-import { searchMedia } from '@/services/tmdb';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Search, SlidersHorizontal, Loader2 } from 'lucide-react';
+import { Media, SearchFilters, Genre } from '@/types/media';
+import { searchMedia, getAllGenres } from '@/services/tmdb';
 import { MediaCard } from '@/components/MediaCard';
+import { SearchFiltersPanel } from '@/components/search/SearchFiltersPanel';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 interface SearchPageProps {
@@ -18,6 +18,8 @@ const defaultFilters: SearchFilters = {
   minYear: null,
   maxYear: null,
   sortBy: 'popularity.desc',
+  genres: [],
+  ageRatings: [],
 };
 
 export const SearchPage: React.FC<SearchPageProps> = ({ onMediaClick }) => {
@@ -26,61 +28,110 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onMediaClick }) => {
   const [showFilters, setShowFilters] = useState(false);
   const [results, setResults] = useState<Media[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [totalResults, setTotalResults] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [genres, setGenres] = useState<Genre[]>([]);
+  
+  const loaderRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
-  const performSearch = useCallback(async () => {
-    setIsLoading(true);
+  // Load genres on mount
+  useEffect(() => {
+    getAllGenres().then(setGenres).catch(console.error);
+  }, []);
+
+  const performSearch = useCallback(async (page = 1, append = false) => {
+    if (page === 1) {
+      setIsLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
     setHasSearched(true);
+    
     try {
-      const data = await searchMedia(query, filters);
-      setResults(data.results);
+      const data = await searchMedia(query, filters, page);
+      
+      if (append) {
+        setResults(prev => [...prev, ...data.results]);
+      } else {
+        setResults(data.results);
+      }
+      
       setTotalResults(data.totalResults);
+      setTotalPages(data.totalPages);
+      setCurrentPage(page);
     } catch (error) {
       console.error('Search failed:', error);
-      setResults([]);
+      if (!append) setResults([]);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, [query, filters]);
 
-  // Auto-search when filters change (after initial search)
+  // Infinite scroll observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && !isLoading && !isLoadingMore && currentPage < totalPages && hasSearched) {
+          performSearch(currentPage + 1, true);
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+
+    if (loaderRef.current) {
+      observer.observe(loaderRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [currentPage, totalPages, isLoading, isLoadingMore, hasSearched, performSearch]);
+
+  // Auto-search when filters change (after initial search) with debounce
   useEffect(() => {
     if (hasSearched) {
-      const timeout = setTimeout(performSearch, 300);
-      return () => clearTimeout(timeout);
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      searchTimeoutRef.current = setTimeout(() => {
+        performSearch(1, false);
+      }, 300);
+      return () => {
+        if (searchTimeoutRef.current) {
+          clearTimeout(searchTimeoutRef.current);
+        }
+      };
     }
-  }, [filters, hasSearched, performSearch]);
+  }, [filters, hasSearched]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    performSearch();
+    performSearch(1, false);
   };
 
   const handleClearFilters = () => {
     setFilters(defaultFilters);
   };
 
-  const typeOptions: { value: MediaType; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'movie', label: 'Movies Only' },
-    { value: 'tv', label: 'TV Shows Only' },
-  ];
-
-  const sortOptions = [
-    { value: 'popularity.desc', label: 'Most Popular' },
-    { value: 'vote_average.desc', label: 'Highest Rated' },
-    { value: 'release_date.desc', label: 'Newest First' },
-    { value: 'title.asc', label: 'Title A-Z' },
-  ];
-
-  const currentYear = new Date().getFullYear();
+  const activeFilterCount = [
+    filters.type !== 'all',
+    filters.minRating > 0,
+    filters.minYear !== null,
+    filters.maxYear !== null,
+    filters.genres.length > 0,
+    filters.ageRatings.length > 0,
+    filters.sortBy !== 'popularity.desc',
+  ].filter(Boolean).length;
 
   return (
     <div className="min-h-screen pt-20 md:pt-24 px-4 md:px-12 pb-24 md:pb-8">
       {/* Search Header */}
-      <div className="max-w-4xl mx-auto mb-8">
-        <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-6">Search</h1>
+      <div className="max-w-4xl mx-auto mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-5">Discover</h1>
 
         {/* Search Bar */}
         <form onSubmit={handleSearch} className="flex gap-2 mb-4">
@@ -91,133 +142,39 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onMediaClick }) => {
               placeholder="Search movies and TV shows..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="pl-10 h-12 bg-card border-border text-foreground placeholder:text-muted-foreground"
+              className="pl-10 h-11 bg-card/80 border-border/50 text-foreground placeholder:text-muted-foreground rounded-xl"
             />
           </div>
-          <Button type="submit" size="lg" className="h-12">
+          <Button type="submit" size="lg" className="h-11 px-6 rounded-xl">
             Search
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant={showFilters ? 'secondary' : 'outline'}
             size="lg"
-            className="h-12"
+            className={cn(
+              'h-11 rounded-xl relative',
+              showFilters && 'bg-primary/10 border-primary/50'
+            )}
             onClick={() => setShowFilters(!showFilters)}
           >
             <SlidersHorizontal className="w-5 h-5" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-primary text-primary-foreground text-xs font-medium rounded-full flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
           </Button>
         </form>
 
         {/* Filters Panel */}
         {showFilters && (
-          <div className="p-4 rounded-lg bg-card border border-border animate-scale-in mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Filters & Sorting</h3>
-              <Button variant="ghost" size="sm" onClick={handleClearFilters}>
-                Clear All
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Type Filter */}
-              <div>
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  Type
-                </label>
-                <div className="flex gap-2">
-                  {typeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => setFilters({ ...filters, type: option.value })}
-                      className={cn('filter-chip', filters.type === option.value && 'active')}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Rating Filter */}
-              <div>
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  <Star className="w-4 h-4 inline mr-1" />
-                  Minimum Rating
-                </label>
-                <Select
-                  value={String(filters.minRating)}
-                  onValueChange={(v) => setFilters({ ...filters, minRating: Number(v) })}
-                >
-                  <SelectTrigger className="bg-secondary border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Any Rating</SelectItem>
-                    <SelectItem value="5">5+ Stars</SelectItem>
-                    <SelectItem value="6">6+ Stars</SelectItem>
-                    <SelectItem value="7">7+ Stars</SelectItem>
-                    <SelectItem value="8">8+ Stars</SelectItem>
-                    <SelectItem value="9">9+ Stars</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Year Range */}
-              <div>
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  <Calendar className="w-4 h-4 inline mr-1" />
-                  Release Year (Min - Max)
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    placeholder="From"
-                    min="1900"
-                    max={currentYear}
-                    value={filters.minYear || ''}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      minYear: e.target.value ? parseInt(e.target.value) : null,
-                    })}
-                    className="bg-secondary border-border"
-                  />
-                  <Input
-                    type="number"
-                    placeholder="To"
-                    min="1900"
-                    max={currentYear + 5}
-                    value={filters.maxYear || ''}
-                    onChange={(e) => setFilters({
-                      ...filters,
-                      maxYear: e.target.value ? parseInt(e.target.value) : null,
-                    })}
-                    className="bg-secondary border-border"
-                  />
-                </div>
-              </div>
-
-              {/* Sort By */}
-              <div>
-                <label className="text-sm font-medium text-muted-foreground mb-2 block">
-                  Sort By
-                </label>
-                <Select
-                  value={filters.sortBy}
-                  onValueChange={(v) => setFilters({ ...filters, sortBy: v as SearchFilters['sortBy'] })}
-                >
-                  <SelectTrigger className="bg-secondary border-border">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {sortOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
+          <SearchFiltersPanel
+            filters={filters}
+            onFiltersChange={setFilters}
+            genres={genres}
+            onClearFilters={handleClearFilters}
+          />
         )}
       </div>
 
@@ -225,10 +182,10 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onMediaClick }) => {
       <div className="max-w-7xl mx-auto">
         {isLoading ? (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-            {Array.from({ length: 14 }).map((_, i) => (
+            {Array.from({ length: 21 }).map((_, i) => (
               <div
                 key={i}
-                className="aspect-[2/3] rounded-md skeleton-shimmer"
+                className="aspect-[2/3] rounded-lg skeleton-shimmer"
               />
             ))}
           </div>
@@ -236,35 +193,63 @@ export const SearchPage: React.FC<SearchPageProps> = ({ onMediaClick }) => {
           <>
             {results.length > 0 ? (
               <>
-                <p className="text-muted-foreground mb-4">
+                <p className="text-muted-foreground mb-4 text-sm">
                   Found {totalResults.toLocaleString()} results
+                  {currentPage < totalPages && (
+                    <span className="text-muted-foreground/70"> · Showing {results.length}</span>
+                  )}
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-                  {results.map((item) => (
+                  {results.map((item, index) => (
                     <MediaCard
-                      key={`${item.media_type}-${item.id}`}
+                      key={`${item.media_type}-${item.id}-${index}`}
                       media={item}
                       onClick={() => onMediaClick(item)}
                     />
                   ))}
                 </div>
+                
+                {/* Infinite scroll loader */}
+                <div ref={loaderRef} className="flex justify-center py-8">
+                  {isLoadingMore && (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Loading more...</span>
+                    </div>
+                  )}
+                  {currentPage >= totalPages && results.length > 0 && (
+                    <p className="text-muted-foreground/60 text-sm">
+                      You've reached the end
+                    </p>
+                  )}
+                </div>
               </>
             ) : (
-              <div className="text-center py-12">
+              <div className="text-center py-16">
                 <p className="text-xl text-muted-foreground mb-2">No results found</p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground/70">
                   Try adjusting your search or filters
                 </p>
               </div>
             )}
           </>
         ) : (
-          <div className="text-center py-12">
-            <Search className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
+          <div className="text-center py-16">
+            <Search className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-40" />
             <p className="text-xl text-muted-foreground mb-2">Search for movies and TV shows</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground/70 mb-6">
               Or use filters to discover content without searching
             </p>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowFilters(true);
+                performSearch(1, false);
+              }}
+              className="rounded-xl"
+            >
+              Browse All Movies
+            </Button>
           </div>
         )}
       </div>

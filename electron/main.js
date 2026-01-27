@@ -1,16 +1,28 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, exec } = require('child_process');
 const fs = require('fs');
-const https = require('https');
-const http = require('http');
 
 // Keep a global reference of the window object
-let mainWindow;
-let webviewWindow;
+let mainWindow = null;
+let webviewWindow = null;
 
 // Determine if we're in development
 const isDev = !app.isPackaged;
+
+// Prevent multiple instances
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -21,19 +33,47 @@ function createWindow() {
     backgroundColor: '#0a0a0a',
     titleBarStyle: 'hidden',
     frame: false,
+    show: false, // Don't show until ready
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
+  });
+
+  // Show window when ready to prevent flash
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
   });
 
   // Load the app
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // In dev mode, wait for the server and retry
+    const loadDevUrl = (retries = 10) => {
+      mainWindow.loadURL('http://localhost:5173').catch((err) => {
+        if (retries > 0) {
+          console.log('Waiting for dev server... retries left:', retries);
+          setTimeout(() => loadDevUrl(retries - 1), 1000);
+        } else {
+          console.error('Failed to connect to dev server:', err);
+        }
+      });
+    };
+    loadDevUrl();
+    // Open dev tools after a delay
+    setTimeout(() => {
+      if (mainWindow) mainWindow.webContents.openDevTools();
+    }, 2000);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    const indexPath = path.join(__dirname, '../dist/index.html');
+    if (fs.existsSync(indexPath)) {
+      mainWindow.loadFile(indexPath);
+    } else {
+      console.error('Build not found. Run "npm run build" first.');
+      dialog.showErrorBox('Build Not Found', 'Please build the app first by running "npm run build" in the project root.');
+    }
   }
 
   mainWindow.on('closed', () => {
@@ -139,10 +179,30 @@ ipcMain.handle('select-video-file', async () => {
 
 ipcMain.handle('launch-player', async (event, { playerPath, filePath }) => {
   try {
+    // Validate file exists
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'Video file not found: ' + filePath };
+    }
+
+    // Normalize paths for Windows
+    const normalizedPlayerPath = playerPath.replace(/\//g, '\\');
+    const normalizedFilePath = filePath.replace(/\//g, '\\');
+    
+    // Build command with proper argument format
+    // Use the format: PlayerPath.exe -"filepath" (dash prefix as specified)
+    const args = [`-${normalizedFilePath}`];
+    
+    console.log('Launching player:', normalizedPlayerPath, 'with args:', args);
+
     // Try to launch the player
-    const playerProcess = spawn(playerPath, [`-${filePath}`], {
+    const playerProcess = spawn(normalizedPlayerPath, args, {
       detached: true,
       stdio: 'ignore',
+      shell: true, // Use shell on Windows for better compatibility
+    });
+
+    playerProcess.on('error', (err) => {
+      console.error('Player spawn error:', err);
     });
 
     playerProcess.unref();

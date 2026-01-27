@@ -16,6 +16,7 @@ export interface Media {
   media_type?: 'movie' | 'tv';
   adult?: boolean;
   original_language?: string;
+  certification?: string;
 }
 
 export interface MediaDetails extends Media {
@@ -98,10 +99,26 @@ export interface WishlistItem {
 
 export type MediaType = 'movie' | 'tv' | 'all';
 
+// Age ratings available for filtering
+export type AgeRating = 'G' | 'PG' | 'PG-13' | 'R' | 'NC-17';
+
+export const AGE_RATINGS: AgeRating[] = ['G', 'PG', 'PG-13', 'R', 'NC-17'];
+
+// Map age ratings to TMDB certification values
+export const AGE_RATING_CERTIFICATIONS: Record<AgeRating, string[]> = {
+  'G': ['G'],
+  'PG': ['PG'],
+  'PG-13': ['PG-13'],
+  'R': ['R'],
+  'NC-17': ['NC-17'],
+};
+
 export interface SearchFilters {
   type: MediaType;
   minRating: number;
   minYear: number | null;
   maxYear: number | null;
   sortBy: 'popularity.desc' | 'vote_average.desc' | 'release_date.desc' | 'title.asc';
+  genres: number[];
+  ageRatings: AgeRating[];
 }

@@ -51,9 +51,19 @@ export const getNowPlaying = async (mediaType: 'movie' | 'tv' = 'movie', page = 
   return data.results.map(item => ({ ...item, media_type: mediaType }));
 };
 
-// Upcoming
+// Upcoming (only movies with release dates in the future)
 export const getUpcoming = async (page = 1) => {
-  const data = await fetchTMDB<TMDBResponse<Media>>('/movie/upcoming', { page });
+  const today = new Date().toISOString().split('T')[0];
+  const futureDate = new Date();
+  futureDate.setMonth(futureDate.getMonth() + 6);
+  const maxDate = futureDate.toISOString().split('T')[0];
+  
+  const data = await fetchTMDB<TMDBResponse<Media>>('/discover/movie', { 
+    page,
+    'primary_release_date.gte': today,
+    'primary_release_date.lte': maxDate,
+    sort_by: 'primary_release_date.asc',
+  });
   return data.results.map(item => ({ ...item, media_type: 'movie' as const }));
 };
 

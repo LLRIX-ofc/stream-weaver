@@ -5,6 +5,9 @@ import { getImageUrl } from '@/services/tmdb';
 import { Button } from '@/components/ui/button';
 import { Media } from '@/types/media';
 import { cn } from '@/lib/utils';
+import { isMobileDevice, launchInfuse } from '@/lib/device';
+import { isElectron } from '@/lib/electron';
+import { useTraktSync } from '@/hooks/useTraktSync';
 
 interface LibraryPageProps {
   onMediaClick: (media: Media) => void;
@@ -12,11 +15,26 @@ interface LibraryPageProps {
 
 export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
   const { library, removeFromLibrary, settings } = useApp();
+  const { scrobbleToTrakt, isAuthenticated: isTraktAuthenticated } = useTraktSync();
 
-  const handleWatch = (filePath: string) => {
-    // In Electron, this would send to the helper app
-    console.log(`Opening: ${settings.playerPath} -${filePath}`);
-    alert(`Would run: ${settings.playerPath} -${filePath}\n\nThis requires the Electron helper app.`);
+  const handleWatch = async (filePath: string, mediaId: number, mediaType: 'movie' | 'tv') => {
+    const isMobile = isMobileDevice();
+    
+    if (isMobile) {
+      // On mobile, use Infuse API
+      launchInfuse(filePath);
+    } else if (isElectron() && window.electronAPI) {
+      // On Electron, launch native player
+      await window.electronAPI.launchPlayer(settings.playerPath, filePath);
+    } else {
+      // Browser fallback
+      alert(`Would run: ${settings.playerPath} -${filePath}\n\nThis requires the Electron helper app or a mobile device with Infuse.`);
+    }
+    
+    // Scrobble to Trakt if authenticated
+    if (isTraktAuthenticated) {
+      await scrobbleToTrakt(mediaId, mediaType);
+    }
   };
 
   const handleRemove = (mediaId: number, mediaType: 'movie' | 'tv') => {
@@ -107,7 +125,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
                       <Button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleWatch(item.filePath);
+                          handleWatch(item.filePath, item.mediaId, item.mediaType);
                         }}
                         className="gap-2"
                       >

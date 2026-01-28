@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
   
+  // Media server
+  startMediaServer: () => ipcRenderer.invoke('start-media-server'),
+  stopMediaServer: () => ipcRenderer.invoke('stop-media-server'),
+  getMediaServerUrl: () => ipcRenderer.invoke('get-media-server-url'),
+  updateMediaLibrary: (library) => ipcRenderer.invoke('update-media-library', library),
+  
   // Event listeners
   onDownloadProgress: (callback) => {
     const handler = (event, data) => callback(data);
@@ -33,6 +39,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (event, data) => callback(data);
     ipcRenderer.on('download-complete', handler);
     return () => ipcRenderer.removeListener('download-complete', handler);
+  },
+  
+  // Trakt OAuth callback listener
+  onTraktCallback: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('trakt-callback', handler);
+    return () => ipcRenderer.removeListener('trakt-callback', handler);
   },
 });
 

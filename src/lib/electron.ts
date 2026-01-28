@@ -8,8 +8,21 @@ interface ElectronAPI {
   minimize: () => void;
   maximize: () => void;
   close: () => void;
+  // Media server
+  startMediaServer: () => Promise<{ success: boolean; url: string }>;
+  stopMediaServer: () => Promise<{ success: boolean }>;
+  getMediaServerUrl: () => Promise<{ url: string }>;
+  updateMediaLibrary: (library: any[]) => Promise<{ success: boolean }>;
+  // Event listeners
   onDownloadProgress: (callback: (data: { fileName: string; percent: number; received: number; total: number }) => void) => () => void;
   onDownloadComplete: (callback: (data: { fileName: string; filePath: string }) => void) => () => void;
+  onTraktCallback: (callback: (data: { code?: string; error?: string }) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    electronAPI?: ElectronAPI;
+  }
 }
 
 declare global {

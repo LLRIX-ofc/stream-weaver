@@ -31,6 +31,14 @@ export interface MediaDetails extends Media {
   revenue?: number;
   number_of_seasons?: number;
   number_of_episodes?: number;
+  seasons?: {
+    id: number;
+    name: string;
+    season_number: number;
+    episode_count: number;
+    air_date: string | null;
+    poster_path: string | null;
+  }[];
   networks?: { id: number; name: string; logo_path: string | null }[];
   created_by?: { id: number; name: string; profile_path: string | null }[];
   credits?: {

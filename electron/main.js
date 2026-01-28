@@ -2,13 +2,29 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { spawn, exec } = require('child_process');
 const fs = require('fs');
+const MediaServer = require('./webdav-server');
 
 // Keep a global reference of the window object
 let mainWindow = null;
 let webviewWindow = null;
 
+// Media server instance
+const mediaServer = new MediaServer();
+
 // Determine if we're in development
 const isDev = !app.isPackaged;
+
+// Deep link protocol for Trakt OAuth
+const PROTOCOL = 'movieapp';
+
+// Set as default protocol client for movieapp:// URLs
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
 
 // Prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
@@ -16,12 +32,38 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (event, commandLine) => {
+    // Handle deep link from second instance
+    const url = commandLine.find(arg => arg.startsWith(`${PROTOCOL}://`));
+    if (url && mainWindow) {
+      handleDeepLink(url);
+    }
+    
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
   });
+}
+
+// Handle deep links (Trakt OAuth callback)
+function handleDeepLink(url) {
+  console.log('Deep link received:', url);
+  
+  // Parse the URL: movieapp://trakt-callback?code=XXX
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.host === 'trakt-callback') {
+      const code = parsedUrl.searchParams.get('code');
+      const error = parsedUrl.searchParams.get('error');
+      
+      if (mainWindow) {
+        mainWindow.webContents.send('trakt-callback', { code, error });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to parse deep link:', err);
+  }
 }
 
 function createWindow() {
@@ -260,10 +302,45 @@ ipcMain.on('window-close', () => {
   mainWindow?.close();
 });
 
+// Media server IPC handlers
+ipcMain.handle('start-media-server', async () => {
+  const url = mediaServer.start();
+  return { success: true, url };
+});
+
+ipcMain.handle('stop-media-server', async () => {
+  mediaServer.stop();
+  return { success: true };
+});
+
+ipcMain.handle('get-media-server-url', async () => {
+  return { url: mediaServer.getServerUrl() };
+});
+
+ipcMain.handle('update-media-library', async (event, library) => {
+  mediaServer.updateLibrary(library);
+  return { success: true };
+});
+
 // App lifecycle
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  
+  // Start media server automatically
+  const serverUrl = mediaServer.start();
+  console.log('Media server started at:', serverUrl);
+});
+
+// Handle deep link on macOS
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
 
 app.on('window-all-closed', () => {
+  // Stop media server when app closes
+  mediaServer.stop();
+  
   if (process.platform !== 'darwin') {
     app.quit();
   }

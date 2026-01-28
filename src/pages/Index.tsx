@@ -23,10 +23,14 @@ const Index = () => {
     setSelectedMedia(null);
   };
 
+  const handleNavigateToSettings = () => {
+    setActiveTab('settings');
+  };
+
   const renderPage = () => {
     switch (activeTab) {
       case 'home':
-        return <HomePage onMediaClick={handleMediaClick} />;
+        return <HomePage onMediaClick={handleMediaClick} onNavigateToSettings={handleNavigateToSettings} />;
       case 'search':
         return <SearchPage onMediaClick={handleMediaClick} />;
       case 'wishlist':
@@ -36,7 +40,7 @@ const Index = () => {
       case 'settings':
         return <SettingsPage />;
       default:
-        return <HomePage onMediaClick={handleMediaClick} />;
+        return <HomePage onMediaClick={handleMediaClick} onNavigateToSettings={handleNavigateToSettings} />;
     }
   };
 
@@ -57,6 +61,7 @@ const Index = () => {
             onMediaClick={(media) => {
               setSelectedMedia(media);
             }}
+            onNavigateToSettings={handleNavigateToSettings}
           />
         )}
       </div>

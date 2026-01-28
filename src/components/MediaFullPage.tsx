@@ -1,26 +1,34 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { X, Play, Plus, Check, Star, Calendar, Clock, FolderOpen, Download, Youtube } from 'lucide-react';
+import { X, Play, Plus, Check, Star, Calendar, Clock, FolderOpen, Download, Youtube, Tv } from 'lucide-react';
 import { MediaDetails, Media, Video } from '@/types/media';
 import { getDetails, getImageUrl } from '@/services/tmdb';
 import { useApp } from '@/contexts/AppContext';
+import { useTraktSync } from '@/hooks/useTraktSync';
 import { MediaCard } from './MediaCard';
+import { EpisodePicker } from './EpisodePicker';
+import { TraktSignInPrompt } from './TraktSignInPrompt';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { isMobileDevice, launchMediaPlayback, launchInfuse } from '@/lib/device';
+import { isElectron } from '@/lib/electron';
 
 interface MediaFullPageProps {
   media: Media;
   onClose: () => void;
   onMediaClick: (media: Media) => void;
+  onNavigateToSettings?: () => void;
 }
 
 export const MediaFullPage: React.FC<MediaFullPageProps> = ({
   media,
   onClose,
   onMediaClick,
+  onNavigateToSettings,
 }) => {
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showTrailer, setShowTrailer] = useState(false);
+  const [showEpisodes, setShowEpisodes] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   
@@ -33,6 +41,15 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
     getLibraryItem,
     settings,
   } = useApp();
+
+  const {
+    isAuthenticated: isTraktAuthenticated,
+    showSignInPrompt,
+    setShowSignInPrompt,
+    syncWishlistToTrakt,
+    syncLibraryToTrakt,
+    scrobbleToTrakt,
+  } = useTraktSync();
 
   const mediaType = media.media_type || 'movie';
   const title = media.title || media.name || 'Unknown';
@@ -77,10 +94,15 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
     }
   };
 
-  const handleWishlistToggle = () => {
+  const handleWishlistToggle = async () => {
     if (inWishlist) {
       removeFromWishlist(media.id, mediaType);
     } else {
+      // Show prompt if not authenticated
+      if (!isTraktAuthenticated) {
+        setShowSignInPrompt(true);
+      }
+      
       addToWishlist({
         mediaId: media.id,
         mediaType,
@@ -90,14 +112,23 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
         releaseDate: media.release_date || media.first_air_date,
         voteAverage: media.vote_average,
       });
+      
+      // Sync to Trakt if authenticated
+      if (isTraktAuthenticated) {
+        await syncWishlistToTrakt(media.id, mediaType);
+      }
     }
   };
 
   const handleAddToLibrary = () => {
+    // Show prompt if not authenticated
+    if (!isTraktAuthenticated) {
+      setShowSignInPrompt(true);
+    }
     fileInputRef.current?.click();
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const filePath = (file as any).path || `C:\\Users\\{USER}\\Videos\\Movies\\${file.name}`;
@@ -110,6 +141,11 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
         title,
         posterPath: media.poster_path,
       });
+      
+      // Sync to Trakt if authenticated
+      if (isTraktAuthenticated) {
+        await syncLibraryToTrakt(media.id, mediaType);
+      }
     }
   };
 
@@ -120,11 +156,49 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
     window.open(url, '_blank');
   };
 
-  const handleWatch = () => {
+  const handleWatch = async () => {
     if (libraryItem) {
-      console.log(`Opening: ${settings.playerPath} -${libraryItem.filePath}`);
-      alert(`Would run: ${settings.playerPath} -${libraryItem.filePath}\n\nThis requires the Electron helper app.`);
+      const isMobile = isMobileDevice();
+      
+      if (isMobile) {
+        // On mobile, use Infuse API
+        // For now, we'd need the media server URL - this is a placeholder
+        launchInfuse(libraryItem.filePath);
+      } else if (isElectron() && window.electronAPI) {
+        // On Electron, launch native player
+        await window.electronAPI.launchPlayer(settings.playerPath, libraryItem.filePath);
+      } else {
+        // Browser fallback
+        alert(`Would run: ${settings.playerPath} -${libraryItem.filePath}\n\nThis requires the Electron helper app.`);
+      }
+      
+      // Scrobble to Trakt
+      if (isTraktAuthenticated) {
+        await scrobbleToTrakt(media.id, mediaType);
+      }
     }
+  };
+
+  const handleEpisodeSelect = async (season: number, episode: number, episodeData: any) => {
+    console.log(`Playing S${season}E${episode}: ${episodeData.name}`);
+    // In a real implementation, this would link to the library or streaming source
+    
+    // Scrobble episode to Trakt
+    if (isTraktAuthenticated) {
+      await scrobbleToTrakt(media.id, mediaType);
+    }
+  };
+
+  const handleDownloadEpisode = (season: number, episode: number, episodeData: any) => {
+    const cleanTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const url = `https://pahe.ink/${cleanTitle}-s${String(season).padStart(2, '0')}e${String(episode).padStart(2, '0')}`;
+    window.open(url, '_blank');
+  };
+
+  const handleGoToSettings = () => {
+    setShowSignInPrompt(false);
+    onClose();
+    onNavigateToSettings?.();
   };
 
   // Find trailer from videos
@@ -295,6 +369,19 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
                       </Button>
                     )}
                     
+                    {/* Episode Picker Button for TV Shows */}
+                    {mediaType === 'tv' && details?.seasons && (
+                      <Button 
+                        onClick={() => setShowEpisodes(!showEpisodes)} 
+                        variant={showEpisodes ? 'secondary' : 'outline'} 
+                        size="sm" 
+                        className="gap-1.5"
+                      >
+                        <Tv className="w-4 h-4" />
+                        Episodes
+                      </Button>
+                    )}
+                    
                     {inLibrary ? (
                       <Button onClick={handleWatch} size="sm" className="gap-1.5">
                         <Play className="w-4 h-4" />
@@ -331,6 +418,19 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
                       )}
                     </Button>
                   </div>
+                  
+                  {/* Episode Picker for TV Shows */}
+                  {mediaType === 'tv' && showEpisodes && details?.seasons && (
+                    <div className="mb-4 p-4 rounded-lg bg-secondary/30 border border-border">
+                      <EpisodePicker
+                        showId={media.id}
+                        showTitle={title}
+                        seasons={details.seasons as any}
+                        onEpisodeSelect={handleEpisodeSelect}
+                        onDownloadEpisode={handleDownloadEpisode}
+                      />
+                    </div>
+                  )}
 
                   {/* Library Info */}
                   {libraryItem && (
@@ -428,6 +528,13 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
           </div>
         </div>
       )}
+      
+      {/* Trakt Sign In Prompt */}
+      <TraktSignInPrompt
+        open={showSignInPrompt}
+        onOpenChange={setShowSignInPrompt}
+        onGoToSettings={handleGoToSettings}
+      />
     </>
   );
 };

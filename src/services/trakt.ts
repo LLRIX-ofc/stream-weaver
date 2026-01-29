@@ -4,9 +4,6 @@
 const TRAKT_API_URL = 'https://api.trakt.tv';
 const TRAKT_API_VERSION = '2';
 
-// Deep link redirect URI for Electron
-export const TRAKT_REDIRECT_URI = 'movieapp://trakt-callback';
-
 export interface TraktConfig {
   clientId: string;
   clientSecret: string;
@@ -105,17 +102,11 @@ class TraktService {
     return true;
   }
 
-  getAuthUrl(redirectUri?: string): string {
+  getAuthUrl(redirectUri: string): string {
     if (!this.config?.clientId) {
       throw new Error('Trakt client ID not configured');
     }
-    const uri = redirectUri || TRAKT_REDIRECT_URI;
-    return `https://trakt.tv/oauth/authorize?response_type=code&client_id=${this.config.clientId}&redirect_uri=${encodeURIComponent(uri)}`;
-  }
-
-  // Get the redirect URI (for Electron deep link registration)
-  getRedirectUri(): string {
-    return TRAKT_REDIRECT_URI;
+    return `https://trakt.tv/oauth/authorize?response_type=code&client_id=${this.config.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   }
 
   async exchangeCode(code: string, redirectUri: string): Promise<boolean> {

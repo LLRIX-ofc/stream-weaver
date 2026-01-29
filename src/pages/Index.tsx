@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Navigation } from '@/components/Navigation';
+import { TitleBar } from '@/components/TitleBar';
 import { MediaFullPage } from '@/components/MediaFullPage';
 import { HomePage } from '@/pages/HomePage';
 import { SearchPage } from '@/pages/SearchPage';
@@ -8,6 +9,7 @@ import { LibraryPage } from '@/pages/LibraryPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { AppProvider } from '@/contexts/AppContext';
 import { Media } from '@/types/media';
+import { isElectron } from '@/lib/electron';
 
 type TabId = 'home' | 'search' | 'wishlist' | 'library' | 'settings';
 
@@ -44,12 +46,18 @@ const Index = () => {
     }
   };
 
+  // Add padding for custom title bar in Electron
+  const hasTitleBar = isElectron();
+
   return (
     <AppProvider>
       <div className="min-h-screen bg-background">
+        {/* Custom Title Bar for Electron */}
+        <TitleBar title="MovieHub" />
+        
         <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
         
-        <main className="md:pt-16">
+        <main className={hasTitleBar ? 'pt-8 md:pt-24' : 'md:pt-16'}>
           {renderPage()}
         </main>
 

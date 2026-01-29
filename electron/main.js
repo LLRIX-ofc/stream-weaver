@@ -72,10 +72,12 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 600,
+    title: 'MovieHub',
     backgroundColor: '#0a0a0a',
     titleBarStyle: 'hidden',
     frame: false,
     show: false, // Don't show until ready
+    icon: path.join(__dirname, '../public/favicon.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -85,12 +87,15 @@ function createWindow() {
     },
   });
 
+  // Set window title explicitly
+  mainWindow.setTitle('MovieHub');
+
   // Show window when ready to prevent flash
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
 
-  // Load the app
+  // Load the app - check for dist folder in multiple locations
   if (isDev) {
     // In dev mode, wait for the server and retry
     const loadDevUrl = (retries = 10) => {
@@ -109,12 +114,25 @@ function createWindow() {
       if (mainWindow) mainWindow.webContents.openDevTools();
     }, 2000);
   } else {
-    const indexPath = path.join(__dirname, '../dist/index.html');
-    if (fs.existsSync(indexPath)) {
+    // Production mode - check multiple possible dist locations
+    const distPaths = [
+      path.join(__dirname, 'dist/index.html'),       // electron/dist (user's setup)
+      path.join(__dirname, '../dist/index.html'),    // project root dist
+    ];
+    
+    let indexPath = null;
+    for (const p of distPaths) {
+      if (fs.existsSync(p)) {
+        indexPath = p;
+        break;
+      }
+    }
+    
+    if (indexPath) {
       mainWindow.loadFile(indexPath);
     } else {
       console.error('Build not found. Run "npm run build" first.');
-      dialog.showErrorBox('Build Not Found', 'Please build the app first by running "npm run build" in the project root.');
+      dialog.showErrorBox('Build Not Found', 'Please build the app first by running "npm run build" in the project root, then copy the dist folder to the electron folder.');
     }
   }
 

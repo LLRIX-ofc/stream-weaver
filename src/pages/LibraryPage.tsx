@@ -17,7 +17,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
   const { library, removeFromLibrary, settings } = useApp();
   const { scrobbleToTrakt, isAuthenticated: isTraktAuthenticated } = useTraktSync();
 
-  const handleWatch = async (filePath: string, mediaId: number, mediaType: 'movie' | 'tv') => {
+  const handleWatch = async (e: React.MouseEvent, filePath: string, mediaId: number, mediaType: 'movie' | 'tv') => {
+    e.stopPropagation();
     const isMobile = isMobileDevice();
     
     if (isMobile) {
@@ -37,37 +38,35 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
     }
   };
 
-  const handleRemove = (mediaId: number, mediaType: 'movie' | 'tv') => {
+  const handleRemove = (e: React.MouseEvent, mediaId: number, mediaType: 'movie' | 'tv') => {
+    e.stopPropagation();
     if (confirm('Are you sure you want to remove this from your library?')) {
       removeFromLibrary(mediaId, mediaType);
     }
   };
 
-  const handleCardClick = (item: typeof library[0], e: React.MouseEvent) => {
-    // Only navigate if not clicking watch button
-    const target = e.target as HTMLElement;
-    if (!target.closest('.watch-overlay')) {
-      const media: Media = {
-        id: item.mediaId,
-        title: item.title,
-        name: item.title,
-        overview: '',
-        poster_path: item.posterPath,
-        backdrop_path: null,
-        vote_average: 0,
-        vote_count: 0,
-        popularity: 0,
-        genre_ids: [],
-        media_type: item.mediaType,
-      };
-      onMediaClick(media);
-    }
+  const handleCardClick = (item: typeof library[0]) => {
+    // Create a Media object and pass to onMediaClick
+    const media: Media = {
+      id: item.mediaId,
+      title: item.title,
+      name: item.title,
+      overview: '',
+      poster_path: item.posterPath,
+      backdrop_path: null,
+      vote_average: 0,
+      vote_count: 0,
+      popularity: 0,
+      genre_ids: [],
+      media_type: item.mediaType,
+    };
+    onMediaClick(media);
   };
 
   return (
     <div className="min-h-screen pt-20 md:pt-24 px-4 md:px-12 pb-24 md:pb-8">
       {/* Header */}
-      <div className="max-w-7xl mx-auto mb-8">
+      <div className="max-w-7xl mx-auto mb-8 animate-fade-in">
         <div className="flex items-center gap-3 mb-2">
           <Library className="w-8 h-8 text-primary" />
           <h1 className="text-2xl md:text-3xl font-bold text-foreground">My Library</h1>
@@ -81,15 +80,18 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
       <div className="max-w-7xl mx-auto">
         {library.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {library.map((item) => {
+            {library.map((item, index) => {
               const posterUrl = getImageUrl(item.posterPath, 'w300');
 
               return (
                 <div
                   key={`${item.mediaType}-${item.mediaId}`}
-                  className="group relative rounded-lg overflow-hidden bg-card cursor-pointer transition-all duration-300 hover:scale-105 hover:z-10"
-                  onClick={(e) => handleCardClick(item, e)}
-                  style={{ boxShadow: 'var(--shadow-md)' }}
+                  className="group relative rounded-xl overflow-hidden bg-card cursor-pointer transition-all duration-300 hover:scale-105 hover:z-10 hover:shadow-xl animate-fade-in"
+                  style={{ 
+                    boxShadow: 'var(--shadow-md)',
+                    animationDelay: `${index * 50}ms`
+                  }}
+                  onClick={() => handleCardClick(item)}
                 >
                   {/* Poster */}
                   <div className="aspect-[2/3] relative">
@@ -97,7 +99,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
                       <img
                         src={posterUrl}
                         alt={item.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                         loading="lazy"
                       />
                     ) : (
@@ -109,7 +111,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
                     )}
 
                     {/* Type Badge */}
-                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-background/80 backdrop-blur-sm flex items-center gap-1">
+                    <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-background/80 backdrop-blur-sm flex items-center gap-1 transition-transform group-hover:scale-110">
                       {item.mediaType === 'movie' ? (
                         <Film className="w-3 h-3 text-primary" />
                       ) : (
@@ -121,13 +123,11 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
                     </div>
 
                     {/* Watch Overlay */}
-                    <div className="watch-overlay absolute inset-0 bg-background/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center">
                       <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleWatch(item.filePath, item.mediaId, item.mediaType);
-                        }}
-                        className="gap-2"
+                        onClick={(e) => handleWatch(e, item.filePath, item.mediaId, item.mediaType)}
+                        className="gap-2 shadow-lg transition-transform hover:scale-110"
+                        size="lg"
                       >
                         <Play className="w-5 h-5" />
                         Watch
@@ -147,11 +147,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
 
                   {/* Remove Button */}
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemove(item.mediaId, item.mediaType);
-                    }}
-                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-destructive/80 text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => handleRemove(e, item.mediaId, item.mediaType)}
+                    className="absolute top-2 right-2 w-7 h-7 rounded-full bg-destructive/80 text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 hover:bg-destructive hover:scale-110"
                     aria-label="Remove from library"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -161,7 +158,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onMediaClick }) => {
             })}
           </div>
         ) : (
-          <div className="text-center py-12">
+          <div className="text-center py-12 animate-fade-in">
             <Library className="w-16 h-16 text-muted-foreground mx-auto mb-4 opacity-50" />
             <p className="text-xl text-muted-foreground mb-2">Your library is empty</p>
             <p className="text-sm text-muted-foreground max-w-md mx-auto">

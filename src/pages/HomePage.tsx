@@ -20,7 +20,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onMediaClick, onNavigateToSe
   const [newReleases, setNewReleases] = useState<Media[]>([]);
   const [seasonal, setSeasonal] = useState<Media[]>([]);
   const [upcoming, setUpcoming] = useState<Media[]>([]);
-  const [heroItem, setHeroItem] = useState<Media | null>(null);
+  const [heroItems, setHeroItems] = useState<Media[]>([]);
+  const [heroIndex, setHeroIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   const { isInWishlist, addToWishlist, removeFromWishlist } = useApp();
@@ -51,9 +52,10 @@ export const HomePage: React.FC<HomePageProps> = ({ onMediaClick, onNavigateToSe
         setSeasonal(seasonalData);
         setUpcoming(upcomingData);
 
-        if (trendingData.length > 0) {
-          const heroCandidate = trendingData.find(m => m.backdrop_path) || trendingData[0];
-          setHeroItem(heroCandidate);
+        // Get top 5 trending items with backdrop for hero rotation
+        const heroCandidates = trendingData.filter(m => m.backdrop_path).slice(0, 5);
+        if (heroCandidates.length > 0) {
+          setHeroItems(heroCandidates);
         }
       } catch (error) {
         console.error('Failed to fetch home data:', error);
@@ -64,6 +66,19 @@ export const HomePage: React.FC<HomePageProps> = ({ onMediaClick, onNavigateToSe
 
     fetchData();
   }, []);
+
+  // Hero rotation every 5 seconds
+  useEffect(() => {
+    if (heroItems.length <= 1) return;
+    
+    const interval = setInterval(() => {
+      setHeroIndex(prev => (prev + 1) % heroItems.length);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [heroItems.length]);
+
+  const heroItem = heroItems[heroIndex] || null;
 
   useEffect(() => {
     if (isTraktAuthenticated) {
@@ -118,20 +133,46 @@ export const HomePage: React.FC<HomePageProps> = ({ onMediaClick, onNavigateToSe
         {/* Hero Section */}
         {heroItem && (
           <section className="relative h-[70vh] md:h-[85vh] overflow-hidden">
+            {/* Hero image with crossfade */}
             <div className="absolute inset-0">
-              {heroItem.backdrop_path ? (
-                <img
-                  src={getImageUrl(heroItem.backdrop_path, 'original')!}
-                  alt={heroTitle}
-                  className="w-full h-full object-cover transition-transform duration-[20s] ease-linear hover:scale-110"
-                />
-              ) : (
-                <div className="w-full h-full bg-muted" />
-              )}
+              {heroItems.map((item, idx) => (
+                <div
+                  key={item.id}
+                  className={`absolute inset-0 transition-opacity duration-1000 ${
+                    idx === heroIndex ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  {item.backdrop_path && (
+                    <img
+                      src={getImageUrl(item.backdrop_path, 'original')!}
+                      alt={item.title || item.name || ''}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                </div>
+              ))}
               <div className="absolute inset-0 hero-gradient" />
               <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
               <div className="absolute inset-x-0 top-0 h-24 hero-gradient-top" />
             </div>
+
+            {/* Hero indicators */}
+            {heroItems.length > 1 && (
+              <div className="absolute bottom-32 md:bottom-40 right-6 md:right-12 flex gap-2 z-20">
+                {heroItems.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setHeroIndex(idx)}
+                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      idx === heroIndex 
+                        ? 'bg-primary w-6' 
+                        : 'bg-white/40 hover:bg-white/60'
+                    }`}
+                    aria-label={`Go to slide ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            )}
 
             <div className="absolute bottom-0 left-0 right-0 p-6 md:p-12 md:pb-24">
               <div className="max-w-2xl">

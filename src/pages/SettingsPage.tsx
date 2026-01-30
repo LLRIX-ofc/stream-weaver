@@ -31,13 +31,27 @@ export const SettingsPage: React.FC = () => {
   const isElectronApp = isElectron();
   const traktConfigValid = isTraktConfigured();
 
-  // Initialize Trakt with build-time credentials
+  // Initialize Trakt with build-time credentials and check auth
   useEffect(() => {
     if (traktConfigValid) {
       traktService.setCredentials(TRAKT_CLIENT_ID, TRAKT_CLIENT_SECRET);
     }
+    // Force reload from localStorage to ensure we have latest state
+    traktService.reloadConfig();
     setTraktAuthenticated(traktService.isAuthenticated());
   }, [traktConfigValid]);
+
+  // Re-check auth status when page becomes visible (e.g., after redirect)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        traktService.reloadConfig();
+        setTraktAuthenticated(traktService.isAuthenticated());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   // Get media server URL
   useEffect(() => {

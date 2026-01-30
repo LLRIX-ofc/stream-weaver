@@ -10,19 +10,27 @@ export const TRAKT_CLIENT_SECRET = import.meta.env.VITE_TRAKT_CLIENT_SECRET || '
 // For Electron, use the deep link protocol
 export const TRAKT_REDIRECT_URI = 'movieapp://trakt-callback';
 
-// For browser development, use the current origin
+// For browser/mobile, use web callback
 export const getTraktRedirectUri = (): string => {
-  // Check if we're in Electron
+  // Check if we're in Electron (desktop app)
   if (typeof window !== 'undefined' && window.electronAPI) {
     return TRAKT_REDIRECT_URI;
   }
   
-  // Browser fallback - use current origin
+  // Browser/mobile fallback - use current origin with hash router callback
   if (typeof window !== 'undefined') {
-    return `${window.location.origin}/#/trakt-callback`;
+    // For mobile PWA or browser, use the web callback
+    const origin = window.location.origin;
+    const pathname = window.location.pathname.replace(/\/$/, '');
+    return `${origin}${pathname}#/trakt-callback`;
   }
   
   return TRAKT_REDIRECT_URI;
+};
+
+// Check if current device can use deep links (Electron only)
+export const canUseDeepLink = (): boolean => {
+  return typeof window !== 'undefined' && window.electronAPI !== undefined;
 };
 
 // Validate credentials are configured

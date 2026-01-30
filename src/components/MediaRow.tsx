@@ -90,10 +90,24 @@ export const MediaRow: React.FC<MediaRowProps> = ({
         </div>
       </div>
 
-      {/* Scrollable Row */}
+      {/* Scrollable Row - prevent vertical scroll capture */}
       <div
         ref={scrollRef}
         className="carousel-scroll px-4 md:px-12"
+        style={{ 
+          overflowX: 'auto', 
+          overflowY: 'hidden',
+          touchAction: 'pan-x'
+        }}
+        onWheel={(e) => {
+          // Only handle horizontal scroll, let vertical scroll pass through
+          if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) {
+            // Vertical scroll is dominant, don't capture it
+            return;
+          }
+          // Horizontal scroll - handle it
+          e.stopPropagation();
+        }}
       >
         {isLoading ? (
           // Skeleton loaders
@@ -101,11 +115,16 @@ export const MediaRow: React.FC<MediaRowProps> = ({
             <div
               key={i}
               className="flex-shrink-0 w-[140px] md:w-[160px] aspect-[2/3] rounded-md skeleton-shimmer"
+              style={{ animationDelay: `${i * 100}ms` }}
             />
           ))
         ) : (
-          items.map((item) => (
-            <div key={`${item.media_type}-${item.id}`} className="flex-shrink-0 w-[140px] md:w-[160px]">
+          items.map((item, index) => (
+            <div 
+              key={`${item.media_type}-${item.id}`} 
+              className="flex-shrink-0 w-[140px] md:w-[160px] animate-fade-in"
+              style={{ animationDelay: `${index * 50}ms` }}
+            >
               <MediaCard
                 media={item}
                 onClick={() => onItemClick(item)}

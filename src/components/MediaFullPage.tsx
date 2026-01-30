@@ -7,6 +7,7 @@ import { useTraktSync } from '@/hooks/useTraktSync';
 import { MediaCard } from './MediaCard';
 import { EpisodePicker } from './EpisodePicker';
 import { TraktSignInPrompt } from './TraktSignInPrompt';
+import { AddToLibraryDialog } from './AddToLibraryDialog';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isMobileDevice, launchMediaPlayback, launchInfuse } from '@/lib/device';
@@ -29,6 +30,7 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [showTrailer, setShowTrailer] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);
+  const [showAddToLibrary, setShowAddToLibrary] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   
@@ -125,27 +127,74 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
     if (!isTraktAuthenticated) {
       setShowSignInPrompt(true);
     }
-    fileInputRef.current?.click();
+    // Open the new Add to Library dialog
+    setShowAddToLibrary(true);
   };
 
+  const handleAddWithPath = async (filePath: string) => {
+    addToLibrary({
+      mediaId: media.id,
+      mediaType,
+      filePath,
+      addedAt: new Date().toISOString(),
+      title,
+      posterPath: media.poster_path,
+    });
+    
+    // Sync to Trakt if authenticated
+    if (isTraktAuthenticated) {
+      await syncLibraryToTrakt(media.id, mediaType);
+    }
+  };
+
+  const handleAddFromHost = async (hostUrl: string) => {
+    // Store the stream URL as the file path
+    const streamPath = `${hostUrl}/media/${mediaType}-${media.id}`;
+    
+    addToLibrary({
+      mediaId: media.id,
+      mediaType,
+      filePath: streamPath,
+      addedAt: new Date().toISOString(),
+      title,
+      posterPath: media.poster_path,
+    });
+    
+    // Save the host URL for future use
+    localStorage.setItem('movieapp_host_url', hostUrl);
+    
+    // Sync to Trakt if authenticated
+    if (isTraktAuthenticated) {
+      await syncLibraryToTrakt(media.id, mediaType);
+    }
+  };
+
+  const handleOpenInfuse = () => {
+    // On mobile, just add to library with a placeholder and open Infuse
+    addToLibrary({
+      mediaId: media.id,
+      mediaType,
+      filePath: 'infuse://library',
+      addedAt: new Date().toISOString(),
+      title,
+      posterPath: media.poster_path,
+    });
+    
+    // Open Infuse app
+    launchInfuse('');
+    
+    // Sync to Trakt if authenticated
+    if (isTraktAuthenticated) {
+      syncLibraryToTrakt(media.id, mediaType);
+    }
+  };
+
+  // Legacy file input handler (keep for backwards compatibility)
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const filePath = (file as any).path || `C:\\Users\\{USER}\\Videos\\Movies\\${file.name}`;
-      
-      addToLibrary({
-        mediaId: media.id,
-        mediaType,
-        filePath,
-        addedAt: new Date().toISOString(),
-        title,
-        posterPath: media.poster_path,
-      });
-      
-      // Sync to Trakt if authenticated
-      if (isTraktAuthenticated) {
-        await syncLibraryToTrakt(media.id, mediaType);
-      }
+      handleAddWithPath(filePath);
     }
   };
 
@@ -235,12 +284,22 @@ export const MediaFullPage: React.FC<MediaFullPageProps> = ({
 
   return (
     <>
+      {/* Add to Library Dialog */}
+      <AddToLibraryDialog
+        open={showAddToLibrary}
+        onOpenChange={setShowAddToLibrary}
+        mediaTitle={title}
+        onAddWithPath={handleAddWithPath}
+        onAddFromHost={handleAddFromHost}
+        onOpenInfuse={handleOpenInfuse}
+      />
+      
       {/* Backdrop overlay - click to close */}
       <div 
         className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-fade-in"
         onClick={handleBackdropClick}
       >
-        {/* Hidden file input */}
+        {/* Hidden file input - kept for legacy */}
         <input
           ref={fileInputRef}
           type="file"

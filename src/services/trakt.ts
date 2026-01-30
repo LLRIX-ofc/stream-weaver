@@ -70,8 +70,19 @@ class TraktService {
   private loadConfig() {
     const stored = localStorage.getItem('movieapp_trakt');
     if (stored) {
-      this.config = JSON.parse(stored);
+      try {
+        this.config = JSON.parse(stored);
+      } catch (e) {
+        console.error('Failed to parse Trakt config:', e);
+        this.config = null;
+      }
     }
+  }
+
+  // Force reload config from storage (for checking persistence)
+  reloadConfig() {
+    this.loadConfig();
+    return this.config;
   }
 
   private saveConfig() {

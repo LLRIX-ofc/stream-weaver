@@ -24,6 +24,9 @@ export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && window.electronAPI !== undefined;
 };
 
+// Expose for import from other modules
+export { isElectron as isElectronDevice };
+
 // Detect if this is a host device (PC with Electron)
 export const isHostDevice = (): boolean => {
   return isElectron() && !isMobileDevice();
